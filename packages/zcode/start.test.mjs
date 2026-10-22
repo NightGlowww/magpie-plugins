@@ -302,10 +302,10 @@ const sentAsIs = (r, key, path) => {
   })
 }
 
-test("a GLM Coding Plan key's request goes as the agent sent it", async () => {
+// BigModel's signed path is covered by signed-plugin.test.mjs, including
+// byte-for-byte body preservation. Z.ai keeps the original request path.
+test("a Z.ai GLM Coding Plan key's request goes as the agent sent it", async () => {
   sentAsIs(await send({ type: "api", key: "one.secret", metadata: { site: "zai" } }, agentText), "one.secret", "/api.z.ai/api/anthropic/v1/messages")
-  got.length = 0
-  sentAsIs(await send({ type: "api", key: "two.secret", metadata: { site: "bigmodel" } }, agentText, { url: "https://open.bigmodel.cn/api/anthropic/v1/messages" }), "two.secret", "/open.bigmodel.cn/api/anthropic/v1/messages")
 })
 
 test("a team seat's request goes as the agent sent it, ZCode's token or not", async () => {

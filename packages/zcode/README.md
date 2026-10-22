@@ -4,6 +4,49 @@ Signs in to Z.ai's GLM Coding Plan, or BigModel's (智谱). It does this the
 way [ZCode](https://zcode.z.ai) does, and serves the plan's GLM models
 over Anthropic's Messages API. Provider id: `zcode`.
 
+## This fork: signed BigModel Coding Plan requests
+
+This fork adds the ZCode client signing and endpoint routing used by our
+validated LiteLLM adapter, with the routing header behavior checked against
+ZCode 3.16.2. It applies to **paid BigModel requests**, including a personal
+key or a team key. The existing Z.ai, Start Plan and explicit `-Trial` paths
+keep their behavior. No LiteLLM service or Python runtime is needed.
+
+Before sending a paid BigModel request, the plugin:
+
+- Reads ZCode's endpoint policy using the key ID, without sending the
+  complete API key to that configuration endpoint. An absent mapping keeps
+  BigModel's original endpoint; a matching mapping can select only ZCode's
+  `https://zcode.z.ai/api/v1/ultra/anthropic/v1/messages` endpoint.
+- Gets an encrypted temporary Ed25519 signing key using the Coding Plan
+  credential, then sends ZCode's version, session, nonce, signature and PoW
+  headers. The signing identity is pinned to the verified version 3.16.2.
+- Adds `X-ZCode-Authorization` only to the recognized ultra endpoint when
+  the mapping requests it and this account already has a ZCode JWT. Like
+  ZCode, a pure API-key account without a JWT still sends the signed
+  request; no other account's token is borrowed.
+
+The request body and streamed response are preserved. A caller's
+`X-Session-Id` is kept; without one, a fresh ID is generated for that
+request. Successful endpoint policies are cached for five minutes and
+signing keys for thirty minutes, separately for each credential. A 401
+invalidates that credential's signing key for the **next** request. The
+current response is returned without replaying the model call.
+
+Signing and routing fail closed: an unrecognized endpoint, malformed
+policy or failed handshake stops the request. Redirects are not followed.
+There is no unsigned retry or automatic switch to another plan. The
+official client's optional unsigned fallback is intentionally not ported.
+An explicit disabled legacy signing policy also stops the request; an
+absent legacy flag does not disable signing.
+
+The signed transport uses only Node built-ins and is included in the
+package as `signed-bigmodel.mjs`. This is a model API adapter, not the
+ZCode Agent runtime. Successful signed requests do not establish any
+particular billing discount or additional allowance. See
+[the verification record](docs/signed-bigmodel-verification.md) for the
+tested scope and installation state.
+
 ## Signing in
 
 - **ZCode: Z.ai GLM Coding Plan** and **ZCode: BigModel (智谱) GLM Coding Plan**
@@ -12,8 +55,9 @@ over Anthropic's Messages API. Provider id: `zcode`.
     nothing to paste.
   - With that sign-in it takes the key named `zcode-api-key` from the
     account's default project, or makes it if it isn't there, as ZCode does.
-    Requests go to `api.z.ai/api/anthropic` or
-    `open.bigmodel.cn/api/anthropic`.
+    Z.ai requests go to `api.z.ai/api/anthropic`. Paid BigModel requests
+    use `open.bigmodel.cn/api/anthropic` or the recognized ZCode ultra
+    mapping described above.
   - If the account has no plan of its own, it looks for a seat on a team's
     plan and uses that team project's `zcode-team-api-key`.
   - Failing both, it uses ZCode's free **Start Plan**, served by zcode.z.ai
@@ -24,7 +68,7 @@ over Anthropic's Messages API. Provider id: `zcode`.
     ZCode's does: ZCode's headers, ZCode's system prompt ahead of the
     agent's, the day in a `<system-reminder>` turn before the agent's
     turns, and the sign-in's device id in `metadata.user_id`. GLM Coding
-    Plan and team requests go as the agent sent them. One it still turns
+    Plan and team request bodies go as the agent sent them. One it still turns
     away (a 405, the block page or code 3012) comes back with what to do
     about it, as magpie's built-in said: "ZCode's Start Plan still turned
     this request away, though magpie sends it as the ZCode app does; …

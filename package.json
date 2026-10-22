@@ -3,6 +3,7 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
-    "check": "bun scripts/check.mjs"
+    "check": "bun scripts/check.mjs",
+    "test:zcode": "bun scripts/test-zcode.mjs"
   }
 }

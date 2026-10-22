@@ -21,6 +21,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { arch, homedir, release, userInfo } from "node:os"
 import { isAbsolute, join } from "node:path"
 import PROMPT from "./prompt.mjs"
+import { createSignedBigModelTransport } from "./signed-bigmodel.mjs"
 
 const PROVIDER = "zcode"
 const ZCODE = "https://zcode.z.ai"
@@ -1535,6 +1536,7 @@ function dress(text, site, device, place) {
 // ---- the plugin ------------------------------------------------------------------
 
 export async function ZCodeAuthPlugin({ client }) {
+  const signedBigModel = createSignedBigModelTransport()
   const log = (message) => {
     try {
       client?.app?.log?.({ body: { service: "zcode-auth", level: "error", message } })
@@ -1650,7 +1652,12 @@ export async function ZCodeAuthPlugin({ client }) {
                 }
               }
             }
-            let h = new Headers(opts.headers)
+            const signedPaidBigModel = !start && s.site === "bigmodel"
+            let h
+            try { h = new Headers(opts.headers) } catch (error) {
+              if (!signedPaidBigModel) throw error
+              throw new ZError("ZCode signed Coding Plan: invalid request headers", 502)
+            }
             const place = workPlace(h)
             if (start) {
               if (jwtExpired(s.jwt)) throw new Error(EXPIRED)
@@ -1667,11 +1674,15 @@ export async function ZCodeAuthPlugin({ client }) {
             } else {
               if (!key) throw new Error("ZCode's sign-in has no key; sign in again")
               swap(s.base)
-              h.delete("authorization")
-              h.set("x-api-key", key)
-              h.set("Authorization", "Bearer " + key)
+              if (!signedPaidBigModel) {
+                h.delete("authorization")
+                h.set("x-api-key", key)
+                h.set("Authorization", "Bearer " + key)
+              }
             }
-            let res = await fetch(url, { ...opts, headers: h })
+            let res = signedPaidBigModel
+              ? await signedBigModel.fetch(url, { ...opts, headers: h }, { ...s, key })
+              : await fetch(url, { ...opts, headers: h })
             // the Start Plan turning the request away says what to do about
             // it, as the built-in's zcodeStartExplain did
             if (start && res.status >= 400) {
