@@ -12,6 +12,11 @@ ZCode 3.16.2. It applies to **paid BigModel requests**, including a personal
 key or a team key. The existing Z.ai, Start Plan and explicit `-Trial` paths
 keep their behavior. No LiteLLM service or Python runtime is needed.
 
+The fork version is `0.1.20+zcode.signed.1`. The `+` suffix is build metadata,
+so Magpie's migration check treats it as compatible with the upstream
+`0.1.20` minimum. A `-zcode-signed.1` suffix would instead mark a pre-release
+and incorrectly leave migration blocked even when model calls work.
+
 Before sending a paid BigModel request, the plugin:
 
 - Reads ZCode's endpoint policy using the key ID, without sending the

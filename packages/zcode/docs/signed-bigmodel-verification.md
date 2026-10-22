@@ -1,7 +1,13 @@
 # Signed BigModel transport verification
 
-Verified on 2026-10-22. Fork version: `0.1.20-zcode-signed.1`.
+Verified on 2026-10-22. Current fork version: `0.1.20+zcode.signed.1`.
 Upstream base: `7fdc07f15097ad06d8d03076b4f653ab42c687f9`.
+
+The original `0.1.20-zcode-signed.1` label sorted below Magpie's `0.1.20`
+migration minimum. It was corrected to build metadata (`+zcode.signed.1`)
+without changing the transport. Model-call success alone does not verify
+Magpie's migration state; deployment must also confirm that native migration
+finishes and the UI's pending-migration warning disappears.
 
 The fork's plugin entry point was loaded directly in a separate Node process
 with an existing ZCode BigModel account. This exercised the plugin's own
