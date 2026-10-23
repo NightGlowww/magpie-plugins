@@ -9,12 +9,13 @@ over Anthropic's Messages API. Provider id: `zcode`.
 This fork adds the ZCode client signing and endpoint routing used by our
 validated LiteLLM adapter, with the routing header behavior checked against
 ZCode 3.16.2. It applies to **paid BigModel requests**, including a personal
-key or a team key. The existing Z.ai, Start Plan and explicit `-Trial` paths
-keep their behavior. No LiteLLM service or Python runtime is needed.
+key or a team key. It also includes upstream 0.1.21/0.1.22's Start Plan
+and explicit `-Trial` compatibility fixes. No LiteLLM service or Python
+runtime is needed.
 
-The fork version is `0.1.20+zcode.signed.1`. The `+` suffix is build metadata,
+The fork version is `0.1.22+zcode.signed.2`. The `+` suffix is build metadata,
 so Magpie's migration check treats it as compatible with the upstream
-`0.1.20` minimum. A `-zcode-signed.1` suffix would instead mark a pre-release
+`0.1.22` release. A `-zcode-signed.1` suffix would instead mark a pre-release
 and incorrectly leave migration blocked even when model calls work.
 
 Before sending a paid BigModel request, the plugin:
@@ -70,8 +71,10 @@ tested scope and installation state.
   - zcode.z.ai serves the Start Plan only to requests that look like the
     ZCode client's own, and refuses others with HTTP 405 "request has been
     blocked due to unusual activity". So a Start Plan request goes as
-    ZCode's does: ZCode's headers, ZCode's system prompt ahead of the
-    agent's, the day in a `<system-reminder>` turn before the agent's
+    ZCode's does: three system blocks, with the agent's system text joined
+    into the third (an extra fourth block causes 405/3012; upstream #343).
+    It constructs ZCode 3.16.3's headers without forwarding the caller's
+    headers or URL query, then puts the day in a `<system-reminder>` turn before the agent's
     turns, and the sign-in's device id in `metadata.user_id`. GLM Coding
     Plan and team request bodies go as the agent sent them. One it still turns
     away (a 405, the block page or code 3012) comes back with what to do
@@ -126,8 +129,9 @@ asks again every 10 minutes:
   `<model>-Trial`; asking that entry spends the gift (see below).
 - Otherwise they go to the gift plans.
 
-Every request carries the key as both `x-api-key` and
-`Authorization: Bearer`.
+Coding Plan requests carry the key as both `x-api-key` and
+`Authorization: Bearer`. Start Plan requests carry the account's ZCode
+session token as Bearer authentication.
 
 **The gift's trial entries.** An account with a GLM Coding Plan can
 also hold gift plans from ZCode activities, ones that expire on a fixed

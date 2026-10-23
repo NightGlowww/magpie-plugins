@@ -30,7 +30,7 @@ const BIGMODEL_API = "https://bigmodel.cn" // BigModel's business API, where ZCo
 const ZAI_BASE = "https://api.z.ai/api/anthropic"
 const BIGMODEL_BASE = "https://open.bigmodel.cn/api/anthropic"
 const START_BASE = ZCODE + "/api/v1/zcode-plan/anthropic"
-const APP_VERSION = "3.14.3" // the ZCode whose sign-in this makes
+const APP_VERSION = "3.16.3" // the ZCode whose sign-in this makes
 const UA = "ZCode/" + APP_VERSION
 
 // ZCode's models before its config is read; the Start Plan has all but GLM-5.3.
@@ -1401,28 +1401,48 @@ function intl() {
   }
 }
 
-// startHeaders puts ZCode's headers on a Start Plan request, jwt its key.
+// startHeaders is a Start Plan request's headers, jwt its key: ZCode's
+// own (3.16.3's Frn and Vdt in glm/zcode.cjs) and the body's content-type,
+// and nothing else. The agent's headers never go on: Claude Code's
+// anthropic-beta, x-app, x-stainless-*, anthropic-dangerous-direct-browser-
+// access and x-claude-code-session-id reach the plugin through magpie's
+// gateway, and ZCode sends none of them (no anthropic-beta at all on the
+// Start Plan: its tool search beta is for coding plans only). Accept and
+// accept-encoding are left to the HTTP client, as ZCode leaves them to
+// Node's.
 function startHeaders(h, jwt) {
-  h.delete("x-api-key")
-  h.delete("authorization")
-  h.delete("X-Device-Mid")
-  h.set("Authorization", "Bearer " + jwt)
-  h.set("anthropic-version", "2023-06-01")
-  h.set("HTTP-Referer", ZCODE)
-  h.set("User-Agent", UA + " ai-sdk/anthropic/3.0.81")
-  h.set("X-ZCode-App-Version", APP_VERSION)
-  h.set("X-Title", "Z Code@cli")
-  h.set("X-Release-Channel", "production")
+  const out = new Headers()
+  out.set("content-type", h.get("content-type") || "application/json")
+  out.set("Authorization", "Bearer " + jwt)
+  out.set("anthropic-version", "2023-06-01")
+  out.set("HTTP-Referer", ZCODE)
+  out.set("User-Agent", UA + " ai-sdk/anthropic/3.0.81")
+  out.set("X-ZCode-App-Version", APP_VERSION)
+  out.set("X-Title", "Z Code@cli")
+  out.set("X-Release-Channel", "production")
   const o = intl()
-  h.set("X-Client-Language", o.locale || "unknown")
-  if (o.timeZone) h.set("X-Client-Timezone", o.timeZone)
-  h.set("X-ZCode-Agent", "glm")
-  h.set("X-Platform", platform())
-  h.set("X-Os-Category", osCategory())
-  h.set("X-Os-Version", osVersion())
-  h.set("x-request-id", uuid())
-  h.set("x-zcode-session-type", "main")
-  h.set("x-zcode-trace-id", uuid())
+  out.set("X-Client-Language", o.locale || "unknown")
+  out.set("X-Client-Timezone", o.timeZone || "unknown")
+  out.set("X-ZCode-Agent", "glm")
+  out.set("X-Platform", platform())
+  out.set("X-Os-Category", osCategory())
+  // os.release() alone, as ZCode's buildZCodeSourceHeadersFromContext
+  // has it; the prompt's OS line is osVersion()
+  out.set("X-Os-Version", release())
+  out.set("x-request-id", uuid())
+  out.set("x-zcode-session-type", "main")
+  out.set("x-zcode-trace-id", uuid())
+  // 3.16's createModelRequestAttributionHeaders: what asked the model
+  out.set("x-zcode-query-source", "main_turn")
+  return out
+}
+
+// startURL is a Start Plan request's URL without the query the agent put
+// on it: Claude Code asks /v1/messages?beta=true, which magpie passes on,
+// and ZCode asks /v1/messages alone.
+function startURL(url) {
+  const i = url.indexOf("?")
+  return i < 0 ? url : url.slice(0, i)
 }
 
 // WORK_DIR and WORK_GIT are where magpie tells a plugin's fetch the agent
@@ -1485,7 +1505,8 @@ function contextPrefix() {
 }
 
 // dress is a Messages request body as ZCode sends it: ZCode's three cached
-// system blocks, then the agent's own system text uncached; the context
+// system blocks and no more, the agent's own system text at the end of the
+// third (#343); the context
 // prefix as the first turn; no cache mark in the turns but on the last
 // block of the last; none on the tools; metadata.user_id naming the
 // sign-in's device. site names the powered-by line's provider, place where
@@ -1503,18 +1524,20 @@ function dress(text, site, device, place) {
   const cached = (t) => ({ type: "text", text: t, cache_control: { type: "ephemeral" } })
   const provider = site === "bigmodel" ? "bigmodel-api" : "zai-api"
   const model = typeof b.model === "string" ? b.model : ""
+  // The agent's own system text joins the third block, as ZCode's
+  // ContextBuilder (3.14.3, glm/zcode.cjs assembleSystemMessages) joins
+  // every dynamic system section, an added one too, with "\n\n" into
+  // that one block: ZCode never sends more than three. zcode.z.ai turns a
+  // fourth block away with 405/3012 (#343), and the first two must stay
+  // byte for byte ZCode's.
   const own = []
   if (typeof b.system === "string") {
-    if (b.system.trim()) own.push({ type: "text", text: b.system })
+    if (b.system.trim()) own.push(b.system)
   } else if (Array.isArray(b.system)) {
-    for (const x of b.system) if (x?.type === "text" && typeof x.text === "string" && x.text) own.push({ type: "text", text: x.text })
+    for (const x of b.system) if (x?.type === "text" && typeof x.text === "string" && x.text.trim()) own.push(x.text)
   }
-  b.system = [
-    cached(PROMPT.cliPrefix),
-    cached(PROMPT.stableSections.join("\n\n")),
-    cached("\n\n" + [PROMPT.beforeEnvironment, environment(provider, model, place), PROMPT.afterEnvironment].join("\n\n")),
-    ...own,
-  ]
+  const dynamic = [PROMPT.beforeEnvironment, environment(provider, model, place), PROMPT.afterEnvironment, ...own]
+  b.system = [cached(PROMPT.cliPrefix), cached(PROMPT.stableSections.join("\n\n")), cached("\n\n" + dynamic.join("\n\n"))]
   b.messages = [contextPrefix(), ...b.messages]
   let last = null
   for (const m of b.messages) {
@@ -1664,7 +1687,8 @@ export async function ZCodeAuthPlugin({ client }) {
               if (!s.jwt) throw new Error("ZCode's sign-in has no key; sign in again")
               swap(START_BASE)
               // the Start Plan is served only to what looks like ZCode's own request
-              startHeaders(h, s.jwt)
+              url = startURL(url)
+              h = startHeaders(h, s.jwt)
               if (opts.body != null) {
                 const text = orig ?? (typeof opts.body === "string" ? opts.body : await new Response(opts.body).text())
                 opts.body = dress(text, s.site, s.device, place)

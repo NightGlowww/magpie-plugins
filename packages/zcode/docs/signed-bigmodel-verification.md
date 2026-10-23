@@ -1,6 +1,9 @@
 # Signed BigModel transport verification
 
-Verified on 2026-10-22. Current fork version: `0.1.20+zcode.signed.1`.
+Paid transport verified on 2026-10-22 with `0.1.20+zcode.signed.1`.
+Current fork version: `0.1.22+zcode.signed.2`; the paid signing transport
+is unchanged. This version also incorporates upstream's Start Plan fixes
+`44036e2` and `57ec655` (system blocks, header isolation and query removal).
 Upstream base: `7fdc07f15097ad06d8d03076b4f653ab42c687f9`.
 
 The original `0.1.20-zcode-signed.1` label sorted below Magpie's `0.1.20`
@@ -72,5 +75,37 @@ regression coverage but were not exercised against live accounts here.
 
 These results establish that the fork's signed BigModel model transport is
 usable. They do not prove billing discounts, extra allowance, or full ZCode
-Agent equivalence. Production Magpie adoption is a separate deployment
-step; the running app still uses its previously installed plugin.
+Agent equivalence. The signed fork was subsequently deployed to Magpie on
+2026-10-22. The checks above do not establish Start Plan acceptance.
+
+## Start Plan compatibility, 2026-10-24
+
+The old fork reproduced HTTP 405 / code 3012 for a real
+`GLM-5.3-Flash-Trial` request with a caller system prompt. Its outbound
+request had four system blocks, caller-specific headers and `?beta=true`.
+Upstream [issue #343](https://github.com/magpie-community/plugins/issues/343)
+and commits [44036e2](https://github.com/magpie-community/plugins/commit/44036e2fccc3c8c9884214ced96a51e47a2a880a)
+and [57ec655](https://github.com/magpie-community/plugins/commit/57ec655a24c1342435cd343795ce2783f466a595)
+provide the fixes incorporated here. Caller system texts now remain in the
+third system block, and the Start Plan request gets a fresh header set and
+no URL query. No paid signing changes or paid fallback were added.
+
+The isolated updated plugin passed real streaming text, tool call and
+tool-result continuation checks for **both GLM-5.3-Trial and
+GLM-5.3-Flash-Trial**. All six successful requests reached the actual
+`/api/v1/zcode-plan/anthropic/v1/messages` path, had three system blocks,
+and completed their streams. Tool arguments and the returned synthetic
+verification tokens matched. Flash emitted thinking in the tool-call
+turn, which was replayed; GLM-5.3 emitted no thinking in that check.
+
+One initial Flash probe incorrectly disabled thinking and received 400 /
+1210: this model requires thinking. The final probes enabled thinking;
+this probe correction is not a plugin code change. A 512-token GLM-5.3
+probe reached the model but ended at its output cap; successful acceptance
+used a 4096-token cap and required `end_turn` and the expected output.
+
+The isolated suite passed **120 tests / 754 assertions**, including the
+new upstream system-block and caller-header regressions and all existing
+signed transport tests. Production gateway and desktop verification are
+recorded separately by the deployment workspace; isolated API success
+does not establish client acceptance or any billing entitlement.
