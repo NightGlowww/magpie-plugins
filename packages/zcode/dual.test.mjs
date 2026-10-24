@@ -310,14 +310,16 @@ test("a ZCode sign-in that expired after the gift was cached goes to the coding 
   expect(sent.at(-1).headers["x-api-key"]).toBe(KEY)
 })
 
-test("a gift read that fails at once still trusts the plan list for ten minutes", async () => {
+// a failed gift read is unknown, not "no gift": a ten-minute "none" hid
+// the account's -Trial models for ten minutes after one hiccup
+test("a gift read that fails at once is asked again in a minute", async () => {
   answers["/api/biz/subscription/list"] = ok([{ productName: "GLM Coding Pro", status: "VALID" }])
   answers["/api/v1/zcode-plan/billing/balance"] = new Response("", { status: 500 })
   await sendTo(MSG, body("glm-5.3-flash"))
   const r = _internal.routes.get(KEY + "\0" + jwt)
   expect(r.start).toBe(false) // on the coding plan
   expect(r.gift).toBeNull() // the balance read failed: no gift known
-  expect(r.ttl).toBe(600_000) // the plan list read fine: 10 minutes
+  expect(r.ttl).toBe(60_000) // the gift is unknown: a minute
 })
 
 test("a coding account with no gift keeps its 10-minute cache", async () => {
@@ -373,9 +375,10 @@ test("every live plan spends first by its buckets' models, and the card shows th
   const before = sent.length
   expect((await sendTo(MSG, body("GLM-4"))).status).toBe(200)
   expect(sent.slice(before).at(-1).origin).toBe("https://api.z.ai")
-  // the card shows both plans' live buckets, spent ones included, none of the ended plan's
+  // the card shows both plans' live buckets, spent ones included, none of the
+  // ended plan's, each named after its plan as there are two
   const u = await (await hooks()).usage(async () => coding, { id: "zcode" })
-  expect(u.windows.map((w) => w.name)).toEqual(["5 hours", "Trust Build", "GLM-5.2-Trial", "GLM-5.2 late"])
+  expect(u.windows.map((w) => w.name)).toEqual(["5 hours", "Start Plan · Trust Build", "GLM Festival Grant · GLM-5.2-Trial", "GLM Festival Grant · GLM-5.2 late"])
   expect(u.windows.some((w) => w.name === "Old")).toBe(false)
   expect(u.windows[0].notModels).toEqual(["glm-5.3-flash-trial", "glm-5.2-trial"])
   expect(u.windows.at(-1).aside).toBe(true) // a spent sibling cannot cap a live bucket

@@ -1,8 +1,8 @@
 # Signed BigModel transport verification
 
 Paid transport verified on 2026-10-22 with `0.1.20+zcode.signed.1`.
-Current fork version: `0.1.22+zcode.signed.2`; the paid signing transport
-is unchanged. This version also incorporates upstream's Start Plan fixes
+The Trial recovery version was `0.1.22+zcode.signed.2`; the paid signing transport
+was unchanged. That version incorporated upstream's Start Plan fixes
 `44036e2` and `57ec655` (system blocks, header isolation and query removal).
 Upstream base: `7fdc07f15097ad06d8d03076b4f653ab42c687f9`.
 
@@ -109,3 +109,56 @@ new upstream system-block and caller-header regressions and all existing
 signed transport tests. Production gateway and desktop verification are
 recorded separately by the deployment workspace; isolated API success
 does not establish client acceptance or any billing entitlement.
+
+## Upstream 0.1.26 integration, 2026-10-24
+
+Current fork version: `0.1.26+zcode.signed.3`. The selected upstream
+commits are `1f8d38b` (gift labels/order), `d1b6500` (ToolSearch),
+`71021b8` (key-only plan diagnostics) and `cc0bd90` (Trial catalog
+recovery and login hints). The existing paid signing module is unchanged.
+The plugin maps ToolSearch before signing and restores returned names
+after the transport. Only the exact caller `?beta=true` marker on the
+original BigModel Messages/count-token URLs is normalized; arbitrary
+queries and policy URLs remain rejected by the signed transport.
+
+The isolated suite passed **138 tests / 897 assertions**. Additional
+cross-layer tests verify real Ed25519 signatures over the signing
+contract, exact beta-query handling, count-token endpoint/JWT isolation,
+JSON tool-name restoration, single-byte SSE chunk boundaries, UTF-8,
+thinking/signatures, and Trial refusal without paid fallback.
+
+A loopback-only candidate loaded the patched plugin and used the existing
+account in memory. Each of GLM-5.3, GLM-5.3-Flash, GLM-5.3-Trial and
+GLM-5.3-Flash-Trial completed the same three-turn streaming sequence:
+ToolSearch, a loaded deferred tool, and the exact synthetic token returned
+by that tool. All twelve accepted requests returned HTTP 200 and complete
+streams. Both Flash paths emitted thinking which was replayed in history.
+Paid requests reached signed ultra with the same account's JWT; Trial
+requests reached Start Plan without a signing handshake or paid replay.
+
+The current account's real balance also listed both Trial models when
+ZCode's provider config was forced unavailable in process memory. The
+result was not marked as a fallback catalog, and its usage card had both
+Trial windows without a login warning. This checks the real-account
+integration of the fallback fix, not a real CDN outage. Multiple gift
+plans, missing sessions, the one-minute retry and key-only 1113 diagnoses
+have isolated regression coverage; unavailable account states were not
+created in production for this verification.
+
+Official Claude Code 2.1.309 also passed the complete subagent/deferred-MCP
+workflow against this candidate with both GLM-5.3-Flash and
+GLM-5.3-Flash-Trial. In each run an actual Agent call launched a subagent
+which invoked Bash and Read; the parent then invoked ToolSearch, loaded
+the fixture's MCP tool and executed it. Both final random tokens matched,
+and both processes exited successfully. Observed upstream ToolSearchTool
+calls were restored to ToolSearch for the CLI; child requests retained
+Bash and Read, and paid/Trial requests retained their distinct transports.
+
+These CLI checks used the official Linux arm64 npm binary, verified
+against its registry SHA-512, in a disposable container with a read-only
+root filesystem. Only the synthetic test directory was mounted. The
+restricted mode and explicit tool allowlist were retained, with no
+permission bypass. The CLI received a dummy loopback-candidate key;
+actual upstream credentials stayed in the host plugin's memory. The
+macOS bare-mode check was not counted as subagent acceptance because
+bare mode removes Agent and ToolSearch before the request is sent.

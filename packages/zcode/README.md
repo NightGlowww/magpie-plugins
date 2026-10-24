@@ -9,13 +9,14 @@ over Anthropic's Messages API. Provider id: `zcode`.
 This fork adds the ZCode client signing and endpoint routing used by our
 validated LiteLLM adapter, with the routing header behavior checked against
 ZCode 3.16.2. It applies to **paid BigModel requests**, including a personal
-key or a team key. It also includes upstream 0.1.21/0.1.22's Start Plan
-and explicit `-Trial` compatibility fixes. No LiteLLM service or Python
-runtime is needed.
+key or a team key. It also includes upstream ZCode 0.1.26: Start Plan
+compatibility, Claude Code tool search, clearer gift allowance cards and
+recovery of Trial entries after transient catalog or balance failures.
+No LiteLLM service or Python runtime is needed.
 
-The fork version is `0.1.22+zcode.signed.2`. The `+` suffix is build metadata,
+The fork version is `0.1.26+zcode.signed.3`. The `+` suffix is build metadata,
 so Magpie's migration check treats it as compatible with the upstream
-`0.1.22` release. A `-zcode-signed.1` suffix would instead mark a pre-release
+`0.1.26` release. A `-zcode-signed.1` suffix would instead mark a pre-release
 and incorrectly leave migration blocked even when model calls work.
 
 Before sending a paid BigModel request, the plugin:
@@ -32,7 +33,9 @@ Before sending a paid BigModel request, the plugin:
   ZCode, a pure API-key account without a JWT still sends the signed
   request; no other account's token is borrowed.
 
-The request body and streamed response are preserved. A caller's
+The signing transport preserves the body it receives. Before signing,
+the plugin applies the ToolSearch compatibility mapping described below;
+other request bodies and streamed responses are preserved. A caller's
 `X-Session-Id` is kept; without one, a fresh ID is generated for that
 request. Successful endpoint policies are cached for five minutes and
 signing keys for thirty minutes, separately for each credential. A 401
@@ -46,12 +49,32 @@ official client's optional unsigned fallback is intentionally not ported.
 An explicit disabled legacy signing policy also stops the request; an
 absent legacy flag does not disable signing.
 
+Claude Code's exact `?beta=true` flag is removed from the original
+BigModel Messages and count-token request URLs before the signed
+transport checks them. Other queries, altered routes and endpoint-policy
+URLs retain the existing strict validation.
+
 The signed transport uses only Node built-ins and is included in the
 package as `signed-bigmodel.mjs`. This is a model API adapter, not the
 ZCode Agent runtime. Successful signed requests do not establish any
 particular billing discount or additional allowance. See
 [the verification record](docs/signed-bigmodel-verification.md) for the
 tested scope and installation state.
+
+## Claude Code tool search
+
+Upstream 0.1.24 fixes ZCode plans hiding ordinary tools such as Bash,
+Read, Write and Agent when a request includes a tool named `ToolSearch`.
+The plugin sends that tool as `ToolSearchTool`, including its historical
+calls and explicit tool choice, and restores its name in JSON and
+streamed replies. Schemas already provided by the caller are sent without
+`defer_loading`; `DeferredToolPlaceholder` is removed. Deferred tools are
+still discovered and executed by the caller. Requests without ToolSearch,
+or with a tool already named ToolSearchTool, pass through unchanged.
+
+This compatibility layer applies before paid signing and Start Plan
+wrapping. An explicit Trial request still spends only its gift and never
+falls back to the paid plan.
 
 ## Signing in
 
@@ -104,6 +127,13 @@ tested scope and installation state.
     another's credentials: to use both, add the app's sign-in once for each.
 - **GLM Coding Plan API key**
   - Paste a key (`<id>.<secret>`) and say which site it is from.
+  - A key reaches the GLM Coding Plan alone. ZCode's gift plans (the
+    Start Plan, ZCode 1024 Dev Day) are served to ZCode's own session,
+    which a key doesn't carry: for an account with only a gift plan, the
+    card and each refused request (1113) say to sign in with ZCode
+    instead. For an account with a GLM Coding Plan, the card says the
+    gift plans' `-Trial` models need ZCode's sign-in, since a key lists
+    none of them.
 
 ## Where the sign-in is kept
 
@@ -186,12 +216,21 @@ that fails, or lists nothing, adds no line at all, and a card that is an
 error keeps its error. Claim the plan in the ZCode app (open it once);
 the next read shows it as an ordinary gift bucket.
 
+**No ZCode session.** A card read with a key, or with a sign-in whose
+ZCode session has run out (it can't be renewed), sets aside a line named
+"ZCode gift plans (-Trial models) need ZCode's sign-in", with why in its
+display: such an account reads no gift and lists no `-Trial` entries.
+Sign in again with ZCode to get them back. A gift read that fails
+otherwise is asked again a minute later, not ten.
+
 ## Models
 
 The models are the ones ZCode offers for the account's plan. They come
 from ZCode's provider config: the release zcode.z.ai names, or an
 installed ZCode's copy if that one is newer. The list is kept for 10
-minutes. When the config can't be read, the plugin falls back to this list:
+minutes. When the config can't be read, the plugin falls back to this list
+(and magpie keeps the list it was told last, unless the account's gift
+plans add `-Trial` entries, which are told as read):
 
 | Model | Context | Output | Efforts |
 |---|---|---|---|

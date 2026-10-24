@@ -41,6 +41,11 @@ async function usage(auth, sets = []) {
   return hooks.auth.usage(async () => auth, { id: "zcode" })
 }
 const jwt = (exp) => ["{}", JSON.stringify({ exp })].map((s) => Buffer.from(s).toString("base64url")).join(".") + ".sig"
+// a card read with no ZCode session says the gift plans need one: a key
+// (or a sign-in with no ZCode token) reads no gift and lists no -Trial
+const GIFT = "ZCode gift plans (-Trial models) need ZCode's sign-in"
+const KEY_LINE = { name: GIFT, used: 0, aside: true, display: "not read with an API key: add the account with a ZCode sign-in" }
+const NO_SESSION = { name: GIFT, used: 0, aside: true, display: "this sign-in has no ZCode session: sign in again" }
 
 test("a Coding Plan's five hours and week", async () => {
   const reset = Date.now() + 3600_000
@@ -59,13 +64,36 @@ test("a Coding Plan's five hours and week", async () => {
     windows: [
       { name: "5 hours", used: 25, display: "500 / 2000", amount: 500, limit: 2000, resetsAt: new Date(reset).toISOString(), span: 5 * 3600 },
       { name: "Weekly", used: 10, display: "1000 / 10000", amount: 1000, limit: 10000, resetsAt: new Date(reset).toISOString(), span: 7 * 86400 },
+      NO_SESSION,
     ],
   })
   expect(calls.every((c) => c.url.origin === "https://api.z.ai")).toBe(true)
   // an API key, BigModel's, is asked on its own site
-  const bm = serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ limits: [] }) : ok([])))
-  expect(await usage({ type: "api", key: "k", metadata: { site: "bigmodel" } })).toEqual({ signIn: "kept", windows: [] })
+  const bm = serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ level: "lite", limits: [] }) : ok([{ productName: "GLM Coding Lite", status: "VALID" }])))
+  expect(await usage({ type: "api", key: "k", metadata: { site: "bigmodel" } })).toEqual({ signIn: "kept", plan: "GLM Coding Lite", windows: [KEY_LINE] })
   expect(bm[0].url.origin).toBe("https://open.bigmodel.cn")
+})
+
+// rtbeilin (X, 10-24): ZCode 1024 Dev Day, no GLM Coding Plan, "API Key
+// doesn't work". The gift is ZCode's session's alone; a key's card says
+// so instead of showing nothing
+test("a key with no GLM Coding Plan says a ZCode gift plan needs ZCode's sign-in", async () => {
+  const none = /no GLM Coding Plan; ZCode's gift plans .* are spent only with ZCode's sign-in, never with a key/
+  for (const site of ["zai", "bigmodel"]) {
+    serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ limits: [] }) : ok([])))
+    expect((await usage({ type: "api", key: "k", metadata: { site } })).error).toMatch(none)
+    // a subscription that ran out is no plan in force either
+    serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ limits: [] }) : ok([{ productName: "GLM Coding Lite", status: "EXPIRED" }])))
+    expect((await usage({ type: "api", key: "k", metadata: { site } })).error).toMatch(none)
+  }
+  // a list that couldn't be read is not "no plan"
+  serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ limits: [] }) : new Response("", { status: 500 })))
+  expect(await usage({ type: "api", key: "k", metadata: { site: "zai" } })).toEqual({ signIn: "kept", windows: [KEY_LINE] })
+  // a counted window or a level is a plan, whatever the list says
+  serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ limits: [{ unit: 3, number: 5, percentage: 3 }] }) : ok([])))
+  expect((await usage({ type: "api", key: "k", metadata: { site: "zai" } })).error).toBeUndefined()
+  serve(({ url }) => (url.pathname.endsWith("/limit") ? ok({ level: "pro", limits: [] }) : ok([])))
+  expect((await usage({ type: "api", key: "k", metadata: { site: "zai" } })).error).toBeUndefined()
 })
 
 test("windows, names and terms as Go reads them", () => {
@@ -212,7 +240,7 @@ test("a Coding Plan of a person's own shows its resets, each with its end, as th
   expect(await usage(auth)).toEqual({
     signIn: "kept",
     plan: "GLM Coding Pro",
-    windows: [],
+    windows: [NO_SESSION],
     resets: { count: 2, byWindow: true, fiveHour: 1, weekly: 1, until: "2026-10-30T15:59:59.000Z", each: [
       { until: "2026-10-30T15:59:59.000Z", window: "weekly" },
       { until: "2026-11-02T15:59:59.000Z", window: "fiveHour" },
