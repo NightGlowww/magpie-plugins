@@ -162,3 +162,15 @@ permission bypass. The CLI received a dummy loopback-candidate key;
 actual upstream credentials stayed in the host plugin's memory. The
 macOS bare-mode check was not counted as subagent acceptance because
 bare mode removes Agent and ToolSearch before the request is sent.
+
+### Desktop limitation found after deployment
+
+The existing DeepSeek Harness conversation returned 405 during the later
+desktop replay, despite all four production gateway tool-search sequences
+passing. Temporarily restoring the previously deployed
+`0.1.22+zcode.signed.2` reproduced the same 405 in that conversation; the
+updated version was then restored. Its gateway metadata described about
+162K estimated input tokens, mostly tool definitions. The reason is not
+established, and this desktop check is **not** counted as passing.
+The earlier 02:53 desktop success above is historical evidence, not the
+current state. No caller request body was saved for this investigation.
